@@ -1,10 +1,13 @@
 {
   "name": "realnet-agent-windows",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Agente Windows para medir quedas de conexão e enviar ao RealNet Monitor.",
   "main": "src/index.js",
+  "bin": "src/index.js",
   "scripts": {
     "start": "node src/index.js",
+    "setup": "node src/index.js --setup",
+    "build:exe": "npx @yao-pkg/pkg src/index.js --targets node20-win-x64 --output dist/realnet-agent.exe",
     "install-service": "node src/install-service.js",
     "uninstall-service": "node src/uninstall-service.js"
   },

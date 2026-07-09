@@ -21,8 +21,8 @@ router.get('/summary', async (req, res) => {
   const events = await query(`
     SELECT
       COUNT(*) AS total_events,
-      SUM(CASE WHEN ended_at IS NULL THEN TIMESTAMPDIFF(SECOND, started_at, NOW()) ELSE duration_seconds END) AS total_seconds,
-      MAX(CASE WHEN ended_at IS NULL THEN TIMESTAMPDIFF(SECOND, started_at, NOW()) ELSE duration_seconds END) AS max_seconds
+      SUM(CASE WHEN ended_at IS NULL THEN TIMESTAMPDIFF(SECOND, started_at, UTC_TIMESTAMP()) ELSE duration_seconds END) AS total_seconds,
+      MAX(CASE WHEN ended_at IS NULL THEN TIMESTAMPDIFF(SECOND, started_at, UTC_TIMESTAMP()) ELSE duration_seconds END) AS max_seconds
     FROM network_events e
     WHERE e.started_at BETWEEN ? AND ? ${deviceWhere}
   `, params);
@@ -30,8 +30,8 @@ router.get('/summary', async (req, res) => {
   const byDevice = await query(`
     SELECT d.id, d.title, d.employee_name, d.department, d.hostname,
       COUNT(e.id) AS total_events,
-      SUM(CASE WHEN e.ended_at IS NULL THEN TIMESTAMPDIFF(SECOND, e.started_at, NOW()) ELSE e.duration_seconds END) AS total_seconds,
-      MAX(CASE WHEN e.ended_at IS NULL THEN TIMESTAMPDIFF(SECOND, e.started_at, NOW()) ELSE e.duration_seconds END) AS max_seconds
+      SUM(CASE WHEN e.ended_at IS NULL THEN TIMESTAMPDIFF(SECOND, e.started_at, UTC_TIMESTAMP()) ELSE e.duration_seconds END) AS total_seconds,
+      MAX(CASE WHEN e.ended_at IS NULL THEN TIMESTAMPDIFF(SECOND, e.started_at, UTC_TIMESTAMP()) ELSE e.duration_seconds END) AS max_seconds
     FROM devices d
     LEFT JOIN network_events e ON e.device_id = d.id AND e.started_at BETWEEN ? AND ?
     ${deviceId ? 'WHERE d.id = ?' : ''}
@@ -41,7 +41,7 @@ router.get('/summary', async (req, res) => {
 
   const byType = await query(`
     SELECT event_type, COUNT(*) AS total_events,
-      SUM(CASE WHEN ended_at IS NULL THEN TIMESTAMPDIFF(SECOND, started_at, NOW()) ELSE duration_seconds END) AS total_seconds
+      SUM(CASE WHEN ended_at IS NULL THEN TIMESTAMPDIFF(SECOND, started_at, UTC_TIMESTAMP()) ELSE duration_seconds END) AS total_seconds
     FROM network_events e
     WHERE e.started_at BETWEEN ? AND ? ${deviceWhere}
     GROUP BY event_type
@@ -57,7 +57,7 @@ router.get('/events', async (req, res) => {
   let deviceWhere = '';
   if (deviceId) { deviceWhere = 'AND e.device_id = ?'; params.push(deviceId); }
   const rows = await query(`
-    SELECT e.*, CASE WHEN e.ended_at IS NULL THEN TIMESTAMPDIFF(SECOND, e.started_at, NOW()) ELSE e.duration_seconds END AS duration_seconds_current, d.title, d.employee_name, d.department, d.hostname
+    SELECT e.*, CASE WHEN e.ended_at IS NULL THEN TIMESTAMPDIFF(SECOND, e.started_at, UTC_TIMESTAMP()) ELSE e.duration_seconds END AS duration_seconds_current, d.title, d.employee_name, d.department, d.hostname
     FROM network_events e
     JOIN devices d ON d.id = e.device_id
     WHERE e.started_at BETWEEN ? AND ? ${deviceWhere}
@@ -90,7 +90,7 @@ router.get('/events.csv', async (req, res) => {
   if (deviceId) { deviceWhere = 'AND e.device_id = ?'; params.push(deviceId); }
   const rows = await query(`
     SELECT e.id, d.employee_name, d.title, d.department, d.hostname, e.started_at, e.ended_at,
-      CASE WHEN e.ended_at IS NULL THEN TIMESTAMPDIFF(SECOND, e.started_at, NOW()) ELSE e.duration_seconds END AS duration_seconds,
+      CASE WHEN e.ended_at IS NULL THEN TIMESTAMPDIFF(SECOND, e.started_at, UTC_TIMESTAMP()) ELSE e.duration_seconds END AS duration_seconds,
       e.event_type, e.probable_cause
     FROM network_events e
     JOIN devices d ON d.id = e.device_id

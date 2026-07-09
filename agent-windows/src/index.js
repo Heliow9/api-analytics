@@ -1,4 +1,10 @@
-require('dotenv').config();
+const { loadConfig } = require('./configLoader');
+const { runSetupWizard } = require('./setup-wizard');
+if (process.argv.includes('--setup')) {
+  runSetupWizard().catch((err) => { console.error(err); process.exit(1); });
+  return;
+}
+loadConfig();
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
@@ -7,7 +13,7 @@ const { ensureIdentity, dataDir } = require('./deviceIdentity');
 const { getAdapterInfo, pingHost, dnsOk, httpOk } = require('./windowsNetwork');
 
 const VERSION = '1.0.0';
-const API_URL = process.env.AGENT_API_URL || 'http://localhost:3333/api';
+const API_URL = process.env.AGENT_API_URL || 'https://dashrealapi.duckdns.org/api';
 const AGENT_KEY = process.env.AGENT_API_KEY || '';
 const INTERVAL = Math.max(5, Number(process.env.INTERVAL_SECONDS || 10)) * 1000;
 const DNS_TEST_HOST = process.env.DNS_TEST_HOST || 'google.com';
@@ -17,6 +23,7 @@ const LAT_WARN = Number(process.env.LATENCY_WARNING_MS || 300);
 const LOSS_WARN = Number(process.env.PACKET_LOSS_WARNING_PERCENT || 10);
 const queueFile = path.join(dataDir, 'offline-queue.json');
 const logFile = path.join(dataDir, 'agent.log');
+const loadedEnv = process.env.REALNET_AGENT_ENV_LOADED || 'nenhum';
 
 function log(msg) {
   const line = `[${new Date().toISOString()}] ${msg}\n`;
@@ -112,6 +119,6 @@ async function loop() {
   }
 }
 
-log(`RealNet Agent iniciado. API=${API_URL} Intervalo=${INTERVAL/1000}s`);
+log(`RealNet Agent iniciado. API=${API_URL} Intervalo=${INTERVAL/1000}s Config=${loadedEnv}`);
 loop();
 setInterval(loop, INTERVAL);

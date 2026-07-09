@@ -44,7 +44,7 @@ router.post('/heartbeat', requireAgentKey, async (req, res) => {
   `, [
     deviceId, body.hostname || null, body.osPlatform || null, body.osRelease || null, body.username || null,
     body.title || null, body.employeeName || null, body.department || null, body.agentVersion || null,
-    now, status, reason, ipAddress, network.latencyMs ?? null, network.packetLoss ?? null,
+    collectedAt, status, reason, ipAddress, network.latencyMs ?? null, network.packetLoss ?? null,
     now, now
   ]);
 
@@ -88,8 +88,8 @@ router.post('/heartbeat', requireAgentKey, async (req, res) => {
     `, [collectedAt, collectedAt, now, openEvent.id]);
   }
 
-  realtime.broadcast('heartbeat', { deviceId, status, reason, lastSeenAt: now });
-  res.json({ ok: true, receivedAt: now });
+  realtime.broadcast('heartbeat', { deviceId, status, reason, lastSeenAt: collectedAt });
+  res.json({ ok: true, receivedAt: now, collectedAt });
 });
 
 router.post('/audit', requireAgentKey, async (req, res) => {

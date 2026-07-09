@@ -11,7 +11,7 @@ router.get('/', async (req, res) => {
     SELECT *,
       CASE
         WHEN last_seen_at IS NULL THEN 1
-        WHEN TIMESTAMPDIFF(SECOND, last_seen_at, NOW()) > 60 THEN 1
+        WHEN TIMESTAMPDIFF(SECOND, last_seen_at, UTC_TIMESTAMP()) > 60 THEN 1
         ELSE 0
       END AS agent_offline
     FROM devices

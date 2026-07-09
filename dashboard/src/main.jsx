@@ -22,6 +22,20 @@ function fmtSeconds(v) {
   return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
 }
 
+
+function fmtDateTime(value) {
+  if (!value) return '-';
+  // A API armazena DATETIME em UTC. Converte para o horário local do navegador.
+  const iso = String(value).includes('T') ? String(value) : String(value).replace(' ', 'T') + 'Z';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return String(value);
+  return new Intl.DateTimeFormat('pt-BR', {
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit',
+    hour12: false
+  }).format(d);
+}
+
 function statusLabel(device) {
   if (Number(device.agent_offline) === 1) return { label: 'Agente sem contato', cls: 'offline' };
   const s = String(device.last_status || 'unknown').toLowerCase();
@@ -122,7 +136,7 @@ function Live({ token }) {
           <td>{d.last_ip || '-'}</td>
           <td>{d.last_latency_ms == null ? '-' : `${d.last_latency_ms}ms`}</td>
           <td>{d.last_packet_loss == null ? '-' : `${d.last_packet_loss}%`}</td>
-          <td>{d.last_seen_at || '-'}</td>
+          <td>{fmtDateTime(d.last_seen_at)}</td>
           <td>{d.last_reason || '-'}</td>
           <td><DeviceEditor device={d} token={token} onSaved={load}/></td>
         </tr>})}</tbody>
@@ -183,7 +197,7 @@ function Reports({ token }) {
     <tbody>{summary?.byDevice?.map(d=><tr key={d.id}><td>{d.employee_name || '-'}</td><td>{d.title || '-'}</td><td>{d.department || '-'}</td><td>{d.hostname}</td><td>{d.total_events || 0}</td><td>{fmtSeconds(d.total_seconds)}</td><td>{fmtSeconds(d.max_seconds)}</td></tr>)}</tbody></table>
     <h3>Eventos detalhados</h3>
     <table><thead><tr><th>Início</th><th>Fim</th><th>Duração</th><th>Pessoa</th><th>Máquina</th><th>Tipo</th><th>Causa provável</th></tr></thead>
-    <tbody>{events.map(e=><tr key={e.id}><td>{e.started_at}</td><td>{e.ended_at || 'Em andamento'}</td><td>{fmtSeconds(e.duration_seconds_current ?? e.duration_seconds)}</td><td>{e.employee_name || e.title || '-'}</td><td>{e.hostname}</td><td>{e.event_type}</td><td>{e.probable_cause}</td></tr>)}</tbody></table>
+    <tbody>{events.map(e=><tr key={e.id}><td>{fmtDateTime(e.started_at)}</td><td>{e.ended_at ? fmtDateTime(e.ended_at) : 'Em andamento'}</td><td>{fmtSeconds(e.duration_seconds_current ?? e.duration_seconds)}</td><td>{e.employee_name || e.title || '-'}</td><td>{e.hostname}</td><td>{e.event_type}</td><td>{e.probable_cause}</td></tr>)}</tbody></table>
   </div>;
 }
 

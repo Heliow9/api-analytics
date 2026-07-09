@@ -52,14 +52,27 @@ function pingHost(host, count = 2) {
     const args = isWin ? ['-n', String(count), '-w', '1500', host] : ['-c', String(count), '-W', '2', host];
     execFile('ping', args, { timeout: 6000 }, (err, stdout) => {
       const text = stdout || '';
+      const normalized = text.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
       let packetLoss = err ? 100 : 0;
       let avgMs = null;
-      const lossWin = text.match(/(\d+)%\s*loss/i) || text.match(/\((\d+)%\s*loss\)/i);
-      if (lossWin) packetLoss = Number(lossWin[1]);
-      const avgWin = text.match(/Average\s*=\s*(\d+)ms/i);
-      const avgUnix = text.match(/=\s*[\d.]+\/(\d+(?:\.\d+)?)\//);
-      if (avgWin) avgMs = Number(avgWin[1]);
-      if (avgUnix) avgMs = Number(avgUnix[1]);
+
+      // Windows em PT-BR: "Perdidos = 0 (0% de perda)" / "Media = 12ms"
+      // Windows em EN:    "Lost = 0 (0% loss)" / "Average = 12ms"
+      // Linux:            "2 packets transmitted... 0% packet loss" / "rtt min/avg/max..."
+      const lossPct = normalized.match(/\((\d+(?:[.,]\d+)?)%\s*(?:de\s*)?(?:perda|loss)/i)
+        || normalized.match(/(\d+(?:[.,]\d+)?)%\s*(?:packet\s*)?loss/i)
+        || normalized.match(/(\d+(?:[.,]\d+)?)%\s*de\s*perda/i);
+      if (lossPct) packetLoss = Number(String(lossPct[1]).replace(',', '.'));
+
+      const avgNamed = normalized.match(/(?:Average|Media)\s*=\s*(\d+(?:[.,]\d+)?)\s*ms/i);
+      const avgUnix = normalized.match(/=\s*[\d.]+\/(\d+(?:\.\d+)?)\//);
+      if (avgNamed) avgMs = Math.round(Number(String(avgNamed[1]).replace(',', '.')));
+      else if (avgUnix) avgMs = Math.round(Number(avgUnix[1]));
+      else {
+        const msMatches = [...normalized.matchAll(/=\s*(\d+(?:[.,]\d+)?)\s*ms/gi)];
+        if (msMatches.length) avgMs = Math.round(Number(String(msMatches[msMatches.length - 1][1]).replace(',', '.')));
+      }
+
       resolve({ ok: !err || packetLoss < 100, avgMs, packetLoss });
     });
   });
