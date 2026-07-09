@@ -1,0 +1,12 @@
+﻿node_modules/
+dist/
+build/
+.env
+.env.*
+*.log
+npm-debug.log*
+.DS_Store
+
+api/.env
+dashboard/.env
+agent-windows/.env
