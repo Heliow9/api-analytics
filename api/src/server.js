@@ -21,6 +21,7 @@ app.use(`${config.apiBasePath}/auth`, require('./routes/auth'));
 app.use(`${config.apiBasePath}/devices`, require('./routes/devices'));
 app.use(`${config.apiBasePath}/agents`, require('./routes/agents'));
 app.use(`${config.apiBasePath}/reports`, require('./routes/reports'));
+app.use(`${config.apiBasePath}/updates`, require('./routes/updates').router);
 
 app.use((err, req, res, next) => {
   console.error(err);

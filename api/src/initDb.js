@@ -155,6 +155,40 @@ async function initDb() {
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
   `);
 
+
+  await query(`
+    CREATE TABLE IF NOT EXISTS agent_releases (
+      id INT UNSIGNED NOT NULL AUTO_INCREMENT,
+      version VARCHAR(40) NOT NULL,
+      file_name VARCHAR(255) NOT NULL,
+      download_url TEXT NOT NULL,
+      sha256 VARCHAR(128) NOT NULL,
+      mandatory TINYINT(1) NOT NULL DEFAULT 1,
+      notes TEXT NULL,
+      active TINYINT(1) NOT NULL DEFAULT 1,
+      created_at DATETIME NOT NULL,
+      updated_at DATETIME NOT NULL,
+      PRIMARY KEY (id),
+      KEY idx_agent_releases_active (active, version)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+  `);
+
+  await query(`
+    CREATE TABLE IF NOT EXISTS agent_update_history (
+      id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+      device_id VARCHAR(80) NULL,
+      from_version VARCHAR(40) NULL,
+      to_version VARCHAR(40) NULL,
+      status VARCHAR(60) NOT NULL,
+      message VARCHAR(500) NULL,
+      raw_payload MEDIUMTEXT NULL,
+      created_at DATETIME NOT NULL,
+      PRIMARY KEY (id),
+      KEY idx_update_history_device_time (device_id, created_at),
+      KEY idx_update_history_status (status)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+  `);
+
   await addColumnIfMissing('devices', 'last_seen_server_at', 'DATETIME NULL');
   await addColumnIfMissing('devices', 'last_reason_label', 'VARCHAR(220) NULL');
   await addColumnIfMissing('devices', 'last_event_type', 'VARCHAR(80) NULL');
@@ -170,6 +204,8 @@ async function initDb() {
   await addColumnIfMissing('devices', 'last_boot_time', 'DATETIME NULL');
   await addColumnIfMissing('devices', 'last_uptime_seconds', 'BIGINT NULL');
   await addColumnIfMissing('devices', 'last_sample_json', 'MEDIUMTEXT NULL');
+  await addColumnIfMissing('devices', 'last_update_status', 'VARCHAR(60) NULL');
+  await addColumnIfMissing('devices', 'last_update_at', 'DATETIME NULL');
 
   await addColumnIfMissing('network_samples', 'adapter_status', 'VARCHAR(80) NULL');
   await addColumnIfMissing('network_samples', 'connection_type', 'VARCHAR(40) NULL');

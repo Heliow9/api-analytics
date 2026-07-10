@@ -24,7 +24,8 @@ const reasonMap = {
   packet_loss: 'Perda de pacotes',
   agent_no_contact: 'Máquina desligada, sem internet ou agente parado',
   computer_restarted: 'Reinicialização detectada',
-  unexpected_shutdown: 'Possível desligamento abrupto'
+  unexpected_shutdown: 'Possível desligamento abrupto',
+  adapter_detection_limited: 'Adaptador não identificado, mas internet funciona'
 };
 
 function apiClient(token) {
@@ -228,6 +229,62 @@ function Reports({ token }) {
   </div>;
 }
 
+
+function Updates({ token }) {
+  const [releases, setReleases] = useState([]);
+  const [history, setHistory] = useState([]);
+  const [devices, setDevices] = useState([]);
+  const [version, setVersion] = useState('1.2.0');
+  const [notes, setNotes] = useState('');
+  const [mandatory, setMandatory] = useState(true);
+  const [file, setFile] = useState(null);
+  const [msg, setMsg] = useState('');
+  async function load() {
+    const client = apiClient(token);
+    const [rel, dev] = await Promise.all([client.get('/updates/releases'), client.get('/devices')]);
+    setReleases(rel.data.releases || []);
+    setHistory(rel.data.history || []);
+    setDevices(dev.data.devices || []);
+  }
+  useEffect(()=>{ load(); }, []);
+  async function upload(e) {
+    e.preventDefault(); setMsg('');
+    if (!file) { setMsg('Selecione o ZIP do agente.'); return; }
+    const fd = new FormData();
+    fd.append('version', version); fd.append('notes', notes); fd.append('mandatory', String(mandatory)); fd.append('active', 'true'); fd.append('file', file);
+    await apiClient(token).post('/updates/releases', fd, { headers: { 'Content-Type': 'multipart/form-data' }});
+    setMsg('Versão publicada. Os agentes buscarão automaticamente no próximo ciclo.');
+    setFile(null); setNotes('');
+    await load();
+  }
+  async function toggleRelease(r) { await apiClient(token).patch(`/updates/releases/${r.id}`, { active: !Number(r.active) }); await load(); }
+  async function removeRelease(r) { if (!confirm('Remover esta versão publicada?')) return; await apiClient(token).delete(`/updates/releases/${r.id}`); await load(); }
+  const outdated = useMemo(()=> {
+    const latest = [...releases].filter(r=>Number(r.active)).sort((a,b)=>String(b.version).localeCompare(String(a.version), undefined, {numeric:true}))[0]?.version;
+    if (!latest) return [];
+    return devices.filter(d => String(d.agent_version || '0.0.0').localeCompare(String(latest), undefined, {numeric:true}) < 0);
+  }, [devices, releases]);
+  return <div className="panel">
+    <div className="panelHead"><h2>Atualizações do agente</h2><button className="small" onClick={load}><RefreshCw size={15}/> Atualizar</button></div>
+    <p className="muted">Publique aqui o pacote ZIP do agente. Cada agente verifica atualização automaticamente e valida o SHA256 antes de aplicar.</p>
+    <form className="filters uploadBox" onSubmit={upload}>
+      <label>Versão <input value={version} onChange={e=>setVersion(e.target.value)} placeholder="1.2.0" /></label>
+      <label>Pacote ZIP <input type="file" accept=".zip" onChange={e=>setFile(e.target.files?.[0] || null)} /></label>
+      <label>Obrigatória <select value={mandatory ? '1' : '0'} onChange={e=>setMandatory(e.target.value === '1')}><option value="1">Sim</option><option value="0">Não</option></select></label>
+      <label>Notas <input value={notes} onChange={e=>setNotes(e.target.value)} placeholder="Correção de adaptador e estabilidade" /></label>
+      <button className="small success">Publicar versão</button>
+    </form>
+    {msg && <p className="successText">{msg}</p>}
+    <div className="cards compact"><div className="card"><b>{releases.filter(r=>Number(r.active)).length}</b><span>Versões ativas</span></div><div className="card"><b>{outdated.length}</b><span>Máquinas desatualizadas</span></div><div className="card"><b>{devices.length}</b><span>Máquinas cadastradas</span></div></div>
+    <h3>Versões publicadas</h3>
+    <table><thead><tr><th>Versão</th><th>Arquivo</th><th>SHA256</th><th>Obrigatória</th><th>Status</th><th>Criada em</th><th>Ações</th></tr></thead><tbody>{releases.map(r=><tr key={r.id}><td><b>{r.version}</b><br/><small>{r.notes || '-'}</small></td><td>{r.file_name}</td><td><small>{String(r.sha256 || '').slice(0,18)}...</small></td><td>{Number(r.mandatory)?'Sim':'Não'}</td><td>{Number(r.active)?'Ativa':'Inativa'}</td><td>{fmtDateTime(r.created_at)}</td><td><button className="small" onClick={()=>toggleRelease(r)}>{Number(r.active)?'Desativar':'Ativar'}</button><button className="small danger" onClick={()=>removeRelease(r)}>Remover</button></td></tr>)}</tbody></table>
+    <h3>Máquinas e versões</h3>
+    <table><thead><tr><th>Pessoa</th><th>Máquina</th><th>Setor</th><th>Versão do agente</th><th>Último contato</th><th>Status</th></tr></thead><tbody>{devices.map(d=><tr key={d.id}><td>{d.employee_name || '-'}</td><td>{d.hostname}</td><td>{d.department || '-'}</td><td>{d.agent_version || '-'}</td><td>{fmtDateTime(d.last_seen_at)}</td><td>{d.status_label || statusLabel(d).label}</td></tr>)}</tbody></table>
+    <h3>Histórico de atualização</h3>
+    <table><thead><tr><th>Data</th><th>Pessoa/Máquina</th><th>Versão</th><th>Status</th><th>Mensagem</th></tr></thead><tbody>{history.slice(0,80).map(h=><tr key={h.id}><td>{fmtDateTime(h.created_at)}</td><td>{h.employee_name || h.title || h.hostname || h.device_id || '-'}</td><td>{h.from_version || '-'} → {h.to_version || '-'}</td><td>{h.status}</td><td>{h.message}</td></tr>)}</tbody></table>
+  </div>;
+}
+
 function Security({ token }) {
   const [currentPassword, setCurrent] = useState(''); const [newPassword, setNew] = useState(''); const [msg, setMsg] = useState('');
   async function change(e) { e.preventDefault(); setMsg(''); try { await apiClient(token).post('/auth/change-password', { currentPassword, newPassword }); setMsg('Senha alterada com sucesso.'); setCurrent(''); setNew(''); } catch { setMsg('Não foi possível alterar. Confira a senha atual e use no mínimo 8 caracteres.'); } }
@@ -238,7 +295,7 @@ function App() {
   const [token, setToken] = useState(localStorage.getItem('realnet_token') || ''); const [tab, setTab] = useState('live');
   if (!token) return <Login onLogin={setToken} />;
   function logout(){ localStorage.removeItem('realnet_token'); setToken(''); }
-  return <div className="app"><aside><div className="logo"><Cable/><div><b>RealNet</b><span>Monitor</span></div></div><button className={tab==='live'?'active':''} onClick={()=>setTab('live')}>Tempo real</button><button className={tab==='reports'?'active':''} onClick={()=>setTab('reports')}>Relatórios</button><button className={tab==='security'?'active':''} onClick={()=>setTab('security')}>Segurança</button><button className="logout" onClick={logout}><LogOut size={16}/> Sair</button></aside><main><header><h1>{tab==='live'?'Monitoramento em tempo real':tab==='reports'?'Relatórios de conexão':'Segurança do dashboard'}</h1><p>Horários registrados em segundos, causa provável em português e evidências técnicas do agente.</p></header>{tab==='live' && <Live token={token}/>} {tab==='reports' && <Reports token={token}/>} {tab==='security' && <Security token={token}/>}</main></div>;
+  return <div className="app"><aside><div className="logo"><Cable/><div><b>RealNet</b><span>Monitor</span></div></div><button className={tab==='live'?'active':''} onClick={()=>setTab('live')}>Tempo real</button><button className={tab==='reports'?'active':''} onClick={()=>setTab('reports')}>Relatórios</button><button className={tab==='updates'?'active':''} onClick={()=>setTab('updates')}>Atualizações</button><button className={tab==='security'?'active':''} onClick={()=>setTab('security')}>Segurança</button><button className="logout" onClick={logout}><LogOut size={16}/> Sair</button></aside><main><header><h1>{tab==='live'?'Monitoramento em tempo real':tab==='reports'?'Relatórios de conexão':tab==='updates'?'Atualizações do agente':'Segurança do dashboard'}</h1><p>Horários registrados em segundos, causa provável em português e evidências técnicas do agente.</p></header>{tab==='live' && <Live token={token}/>} {tab==='reports' && <Reports token={token}/>} {tab==='updates' && <Updates token={token}/>} {tab==='security' && <Security token={token}/>}</main></div>;
 }
 
 createRoot(document.getElementById('root')).render(<App />);

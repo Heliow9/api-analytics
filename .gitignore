@@ -1,28 +1,22 @@
-﻿@"
+node_modules/
+dist/
+build/tmp/
+.env
+.env.*
+*.log
+npm-debug.log*
+.DS_Store
 
-# Arquivos grandes / instaladores
+api/.env
+dashboard/.env
+agent-windows/.env
+
 *.zip
 *.rar
 *.7z
 *.exe
 *.msi
-
-# Payload portable do agente
 agent-windows/installer/payload/
 agent-windows/dist/
-agent-windows/*.zip
 agent-windows/**/node.exe
-
-# Dependências
-node_modules/
-api/node_modules/
-dashboard/node_modules/
-agent-windows/node_modules/
-
-# Ambiente
-.env
-.env.*
-api/.env
-dashboard/.env
-agent-windows/.env
-"@ | Add-Content .gitignore
+api/uploads/

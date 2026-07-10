@@ -16,6 +16,7 @@ module.exports = {
   corsOrigin: process.env.CORS_ORIGIN || '*',
   offlineThresholdSeconds: Number(process.env.OFFLINE_THRESHOLD_SECONDS || 90),
   watchdogIntervalSeconds: Number(process.env.WATCHDOG_INTERVAL_SECONDS || 30),
+  publicBaseUrl: process.env.PUBLIC_BASE_URL || '',
   defaultAdmin: {
     name: process.env.DEFAULT_ADMIN_NAME || 'Administrador',
     email: process.env.DEFAULT_ADMIN_EMAIL || 'admin@real.local',

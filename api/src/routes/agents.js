@@ -190,4 +190,60 @@ router.post('/audit', requireAgentKey, async (req, res) => {
   res.json({ ok: true });
 });
 
+function cmpVersion(a = '0.0.0', b = '0.0.0') {
+  const pa = String(a).split(/[.-]/).map(x => Number.parseInt(x, 10)).map(x => Number.isFinite(x) ? x : 0);
+  const pb = String(b).split(/[.-]/).map(x => Number.parseInt(x, 10)).map(x => Number.isFinite(x) ? x : 0);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const x = pa[i] || 0; const y = pb[i] || 0;
+    if (x > y) return 1;
+    if (x < y) return -1;
+  }
+  return 0;
+}
+
+router.get('/update/check', requireAgentKey, async (req, res) => {
+  const currentVersion = String(req.query.version || '0.0.0');
+  const deviceId = String(req.query.deviceId || '').trim();
+  const releases = await query('SELECT * FROM agent_releases WHERE active = 1 ORDER BY created_at DESC, id DESC LIMIT 50');
+  const newer = releases
+    .filter(r => cmpVersion(r.version, currentVersion) > 0)
+    .sort((a, b) => cmpVersion(b.version, a.version))[0];
+
+  if (deviceId) {
+    await query(
+      'INSERT INTO agent_update_history (device_id, from_version, to_version, status, message, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+      [deviceId, currentVersion, newer?.version || null, newer ? 'available' : 'checked', newer ? 'Atualização disponível.' : 'Sem atualização disponível.', mysqlDate()]
+    ).catch(() => {});
+  }
+
+  if (!newer) return res.json({ updateAvailable: false, currentVersion });
+  res.json({
+    updateAvailable: true,
+    currentVersion,
+    latestVersion: newer.version,
+    downloadUrl: newer.download_url,
+    sha256: newer.sha256,
+    mandatory: Number(newer.mandatory || 0) === 1,
+    notes: newer.notes || ''
+  });
+});
+
+router.post('/update/report', requireAgentKey, async (req, res) => {
+  const body = req.body || {};
+  await query(`
+    INSERT INTO agent_update_history (device_id, from_version, to_version, status, message, raw_payload, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `, [
+    body.deviceId || null,
+    body.fromVersion || null,
+    body.version || body.toVersion || null,
+    body.status || 'reported',
+    body.message || null,
+    safeJson(body),
+    mysqlDate()
+  ]);
+  realtime.broadcast('agent_update', { deviceId: body.deviceId, status: body.status, version: body.version || body.toVersion });
+  res.json({ ok: true });
+});
+
 module.exports = router;

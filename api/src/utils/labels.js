@@ -17,7 +17,13 @@ const REASON_LABELS = {
     label: 'Nenhum adaptador de rede encontrado',
     short: 'Sem adaptador',
     severity: 'critical',
-    hint: 'O Windows não retornou placa de rede ativa. Pode ser driver, dispositivo desabilitado ou falha no adaptador.'
+    hint: 'O Windows não retornou placa de rede ativa e os testes de internet também falharam. Pode ser driver, dispositivo desabilitado ou falha no adaptador.'
+  },
+  adapter_detection_limited: {
+    label: 'Adaptador não identificado, mas internet está funcionando',
+    short: 'Detecção limitada',
+    severity: 'warning',
+    hint: 'O Windows não retornou todos os dados do adaptador, porém DNS/Internet responderam. Não tratar como queda; revisar driver/permissão se repetir.'
   },
   adapter_disabled: {
     label: 'Adaptador de rede desativado no Windows',
