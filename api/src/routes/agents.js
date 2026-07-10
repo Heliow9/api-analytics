@@ -246,4 +246,89 @@ router.post('/update/report', requireAgentKey, async (req, res) => {
   res.json({ ok: true });
 });
 
+
+router.post('/inventory', requireAgentKey, async (req, res) => {
+  const body = req.body || {};
+  const deviceId = String(body.deviceId || '').trim();
+  if (!deviceId) return res.status(400).json({ error: 'deviceId_required' });
+  const now = mysqlDate(asDate(body.timestamp) || new Date());
+  const processes = Array.isArray(body.processes) ? body.processes.slice(0, 600) : [];
+  const services = Array.isArray(body.services) ? body.services.slice(0, 1000) : [];
+
+  await query('DELETE FROM device_processes_current WHERE device_id = ?', [deviceId]);
+  for (const p of processes) {
+    await query(`
+      INSERT INTO device_processes_current
+        (device_id, pid, name, path, window_title, username, cpu_seconds, memory_mb, has_window, collected_at, raw_json)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `, [
+      deviceId, Number(p.pid || 0), p.name || null, p.path || null, p.windowTitle || null,
+      p.username || null, p.cpuSeconds ?? null, p.memoryMb ?? null, Number(Boolean(p.hasWindow || p.windowTitle)), now, safeJson(p)
+    ]);
+  }
+
+  await query('DELETE FROM device_services_current WHERE device_id = ?', [deviceId]);
+  for (const svc of services) {
+    await query(`
+      INSERT INTO device_services_current
+        (device_id, name, display_name, state, start_mode, process_id, path_name, start_name, collected_at, raw_json)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `, [
+      deviceId, svc.name || null, svc.displayName || svc.name || null, svc.state || null, svc.startMode || null,
+      svc.processId ?? null, svc.pathName || null, svc.startName || null, now, safeJson(svc)
+    ]);
+  }
+
+  await query(
+    'UPDATE devices SET last_inventory_at = ?, process_count = ?, service_count = ?, updated_at = ? WHERE id = ?',
+    [now, processes.length, services.length, mysqlDate(), deviceId]
+  ).catch(() => {});
+
+  realtime.broadcast('inventory', { deviceId, processCount: processes.length, serviceCount: services.length, at: now });
+  res.json({ ok: true, processCount: processes.length, serviceCount: services.length });
+});
+
+router.get('/commands/poll', requireAgentKey, async (req, res) => {
+  const deviceId = String(req.query.deviceId || '').trim();
+  if (!deviceId) return res.status(400).json({ error: 'deviceId_required' });
+  const rows = await query(`
+    SELECT * FROM device_commands
+    WHERE device_id = ? AND status = 'pending'
+    ORDER BY id ASC
+    LIMIT 1
+  `, [deviceId]);
+  const cmd = rows[0];
+  if (!cmd) return res.json({ command: null });
+  await query(`
+    UPDATE device_commands
+    SET status = 'running', picked_at = ?, updated_at = ?
+    WHERE id = ? AND status = 'pending'
+  `, [mysqlDate(), mysqlDate(), cmd.id]);
+  let args = {};
+  try { args = JSON.parse(cmd.args_json || '{}'); } catch {}
+  realtime.broadcast('remote_command', { deviceId, commandId: cmd.id, status: 'running', commandType: cmd.command_type });
+  res.json({ command: { ...cmd, args } });
+});
+
+router.post('/commands/:id/result', requireAgentKey, async (req, res) => {
+  const id = Number(req.params.id);
+  const body = req.body || {};
+  const status = body.status === 'success' ? 'success' : 'failed';
+  await query(`
+    UPDATE device_commands
+    SET status = ?, finished_at = ?, result_message = ?, raw_result = ?, updated_at = ?
+    WHERE id = ?
+  `, [status, mysqlDate(), body.message || null, safeJson(body), mysqlDate(), id]);
+  const rows = await query('SELECT * FROM device_commands WHERE id = ? LIMIT 1', [id]);
+  const cmd = rows[0];
+  if (cmd) {
+    await query(
+      'INSERT INTO agent_audit (device_id, event_type, message, raw_payload, created_at) VALUES (?, ?, ?, ?, ?)',
+      [cmd.device_id, 'remote_command_result', `${cmd.command_label || cmd.command_type}: ${status}`, safeJson(body), mysqlDate()]
+    );
+    realtime.broadcast('remote_command', { deviceId: cmd.device_id, commandId: id, status, commandType: cmd.command_type });
+  }
+  res.json({ ok: true });
+});
+
 module.exports = router;

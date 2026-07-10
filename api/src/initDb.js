@@ -173,6 +173,75 @@ async function initDb() {
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
   `);
 
+
+
+  await query(`
+    CREATE TABLE IF NOT EXISTS device_processes_current (
+      id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+      device_id VARCHAR(80) NOT NULL,
+      pid INT NOT NULL,
+      name VARCHAR(180) NULL,
+      path TEXT NULL,
+      window_title TEXT NULL,
+      username VARCHAR(180) NULL,
+      cpu_seconds DECIMAL(18,2) NULL,
+      memory_mb DECIMAL(14,2) NULL,
+      has_window TINYINT(1) NOT NULL DEFAULT 0,
+      collected_at DATETIME NOT NULL,
+      raw_json MEDIUMTEXT NULL,
+      PRIMARY KEY (id),
+      KEY idx_proc_device (device_id),
+      KEY idx_proc_name (name),
+      KEY idx_proc_window (device_id, has_window)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+  `);
+
+  await query(`
+    CREATE TABLE IF NOT EXISTS device_services_current (
+      id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+      device_id VARCHAR(80) NOT NULL,
+      name VARCHAR(180) NULL,
+      display_name VARCHAR(260) NULL,
+      state VARCHAR(80) NULL,
+      start_mode VARCHAR(80) NULL,
+      process_id INT NULL,
+      path_name TEXT NULL,
+      start_name VARCHAR(180) NULL,
+      collected_at DATETIME NOT NULL,
+      raw_json MEDIUMTEXT NULL,
+      PRIMARY KEY (id),
+      KEY idx_svc_device (device_id),
+      KEY idx_svc_name (name),
+      KEY idx_svc_state (device_id, state)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+  `);
+
+  await query(`
+    CREATE TABLE IF NOT EXISTS device_commands (
+      id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+      device_id VARCHAR(80) NOT NULL,
+      command_type VARCHAR(80) NOT NULL,
+      command_label VARCHAR(180) NULL,
+      target_type VARCHAR(80) NULL,
+      target_id VARCHAR(120) NULL,
+      target_name VARCHAR(260) NULL,
+      args_json MEDIUMTEXT NULL,
+      status VARCHAR(40) NOT NULL DEFAULT 'pending',
+      requested_by VARCHAR(180) NULL,
+      requested_at DATETIME NOT NULL,
+      picked_at DATETIME NULL,
+      finished_at DATETIME NULL,
+      result_message VARCHAR(800) NULL,
+      raw_result MEDIUMTEXT NULL,
+      created_at DATETIME NOT NULL,
+      updated_at DATETIME NOT NULL,
+      PRIMARY KEY (id),
+      KEY idx_cmd_device_status (device_id, status),
+      KEY idx_cmd_requested (requested_at),
+      KEY idx_cmd_type (command_type)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+  `);
+
   await query(`
     CREATE TABLE IF NOT EXISTS agent_update_history (
       id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -206,6 +275,9 @@ async function initDb() {
   await addColumnIfMissing('devices', 'last_sample_json', 'MEDIUMTEXT NULL');
   await addColumnIfMissing('devices', 'last_update_status', 'VARCHAR(60) NULL');
   await addColumnIfMissing('devices', 'last_update_at', 'DATETIME NULL');
+  await addColumnIfMissing('devices', 'last_inventory_at', 'DATETIME NULL');
+  await addColumnIfMissing('devices', 'process_count', 'INT NULL');
+  await addColumnIfMissing('devices', 'service_count', 'INT NULL');
 
   await addColumnIfMissing('network_samples', 'adapter_status', 'VARCHAR(80) NULL');
   await addColumnIfMissing('network_samples', 'connection_type', 'VARCHAR(40) NULL');
@@ -224,6 +296,7 @@ async function initDb() {
 
   await addIndexIfMissing('devices', 'idx_devices_boot', 'ALTER TABLE devices ADD INDEX idx_devices_boot (last_boot_time)');
   await addIndexIfMissing('network_events', 'idx_events_source', 'ALTER TABLE network_events ADD INDEX idx_events_source (source)');
+  await addIndexIfMissing('devices', 'idx_devices_inventory', 'ALTER TABLE devices ADD INDEX idx_devices_inventory (last_inventory_at)');
 
   const existing = await query('SELECT id FROM admins WHERE email = ? LIMIT 1', [config.defaultAdmin.email]);
   if (!existing.length) {

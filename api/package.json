@@ -1,6 +1,6 @@
 {
   "name": "realnet-monitor-api",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "description": "API central para monitoramento de quedas de internet por agente Windows.",
   "main": "src/server.js",
   "scripts": {

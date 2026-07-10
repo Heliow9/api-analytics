@@ -285,6 +285,102 @@ function Updates({ token }) {
   </div>;
 }
 
+
+function RemoteAdmin({ token }) {
+  const [devices, setDevices] = useState([]);
+  const [deviceId, setDeviceId] = useState('');
+  const [processes, setProcesses] = useState([]);
+  const [services, setServices] = useState([]);
+  const [commands, setCommands] = useState([]);
+  const [q, setQ] = useState('');
+  const [msg, setMsg] = useState('');
+  const client = apiClient(token);
+
+  async function loadDevices() {
+    const { data } = await client.get('/devices');
+    const list = data.devices || [];
+    setDevices(list);
+    if (!deviceId && list[0]) setDeviceId(list[0].id);
+  }
+  async function loadRemote(id = deviceId) {
+    if (!id) return;
+    const [pr, sv, cm] = await Promise.all([
+      client.get(`/remote/devices/${encodeURIComponent(id)}/processes`),
+      client.get(`/remote/devices/${encodeURIComponent(id)}/services`),
+      client.get(`/remote/devices/${encodeURIComponent(id)}/commands`)
+    ]);
+    setProcesses(pr.data.processes || []);
+    setServices(sv.data.services || []);
+    setCommands(cm.data.commands || []);
+  }
+  useEffect(()=>{ loadDevices(); }, []);
+  useEffect(()=>{ if (deviceId) loadRemote(deviceId); }, [deviceId]);
+
+  const selected = devices.find(d=>d.id===deviceId);
+  const f = String(q || '').toLowerCase();
+  const filteredProcesses = processes.filter(p => !f || String(`${p.name} ${p.pid} ${p.window_title || ''} ${p.path || ''}`).toLowerCase().includes(f)).slice(0, 160);
+  const filteredServices = services.filter(svc => !f || String(`${svc.name} ${svc.display_name} ${svc.state} ${svc.start_mode}`).toLowerCase().includes(f)).slice(0, 220);
+
+  async function sendCommand(command_type, payload = {}) {
+    if (!deviceId) return;
+    setMsg('');
+    try {
+      await client.post(`/remote/devices/${encodeURIComponent(deviceId)}/commands`, { command_type, ...payload });
+      setMsg('Comando enviado. O agente executará no próximo ciclo e registrará o resultado.');
+      setTimeout(()=>loadRemote(deviceId), 1500);
+    } catch (err) {
+      setMsg(err.response?.data?.message || err.response?.data?.error || 'Falha ao enviar comando.');
+    }
+  }
+  function killProcess(p) {
+    if (!confirm(`Finalizar o processo ${p.name} PID ${p.pid}?`)) return;
+    sendCommand('kill_process', { pid: p.pid, name: p.name, target_id: String(p.pid), target_name: p.name, args: { pid: p.pid, name: p.name } });
+  }
+  function serviceAction(action, svc) {
+    const label = action === 'stop_service' ? 'parar' : action === 'start_service' ? 'iniciar' : 'reiniciar';
+    if (!confirm(`Deseja ${label} o serviço ${svc.display_name || svc.name}?`)) return;
+    sendCommand(action, { target_name: svc.name, args: { serviceName: svc.name } });
+  }
+  function restartPc() {
+    const c = prompt('Digite REINICIAR para confirmar a reinicialização em 30 segundos.');
+    if (c !== 'REINICIAR') return;
+    sendCommand('restart_computer', { confirm: 'REINICIAR', args: { delaySeconds: 30 } });
+  }
+  function shutdownPc() {
+    const c = prompt('Digite DESLIGAR para confirmar o desligamento em 30 segundos.');
+    if (c !== 'DESLIGAR') return;
+    sendCommand('shutdown_computer', { confirm: 'DESLIGAR', args: { delaySeconds: 30 } });
+  }
+
+  return <div className="panel">
+    <div className="panelHead"><h2>Administração remota do Windows</h2><button className="small" onClick={()=>{loadDevices(); loadRemote();}}><RefreshCw size={15}/> Atualizar</button></div>
+    <p className="muted">Veja processos e serviços do Windows, finalize aplicativos travados e envie comandos de reinício/desligamento. Todas as ações ficam auditadas.</p>
+    <div className="filters remoteTop">
+      <label>Máquina <select value={deviceId} onChange={e=>setDeviceId(e.target.value)}>{devices.map(d=><option key={d.id} value={d.id}>{d.employee_name || d.title || d.hostname} · {d.hostname}</option>)}</select></label>
+      <label>Buscar <input value={q} onChange={e=>setQ(e.target.value)} placeholder="chrome, excel, spooler, PID..." /></label>
+      <button className="small" onClick={()=>sendCommand('refresh_inventory')}>Forçar inventário</button>
+      <button className="small danger" onClick={restartPc}><Power size={14}/> Reiniciar PC</button>
+      <button className="small danger" onClick={shutdownPc}>Desligar PC</button>
+      <button className="small" onClick={()=>sendCommand('cancel_shutdown')}>Cancelar desligamento</button>
+    </div>
+    {selected && <div className="hintBox"><b>{selected.employee_name || selected.title || selected.hostname}</b> · {selected.hostname} · IP {selected.last_ip || '-'} · Último contato {fmtDateTime(selected.last_seen_at)} · Inventário {fmtDateTime(selected.last_inventory_at)}</div>}
+    {msg && <p className="successText">{msg}</p>}
+
+    <h3>Aplicativos e processos ativos</h3>
+    <table><thead><tr><th>PID</th><th>Nome</th><th>Janela</th><th>Memória</th><th>CPU</th><th>Caminho</th><th>Ação</th></tr></thead><tbody>{filteredProcesses.map(p=><tr key={`${p.pid}-${p.name}`}>
+      <td>{p.pid}</td><td><b>{p.name}</b></td><td>{p.window_title || '-'}</td><td>{p.memory_mb == null ? '-' : `${Number(p.memory_mb).toFixed(1)} MB`}</td><td>{p.cpu_seconds == null ? '-' : `${p.cpu_seconds}s`}</td><td><small>{p.path || '-'}</small></td><td><button className="small danger" onClick={()=>killProcess(p)}>Finalizar</button></td>
+    </tr>)}</tbody></table>
+
+    <h3>Serviços do Windows</h3>
+    <table><thead><tr><th>Serviço</th><th>Nome interno</th><th>Estado</th><th>Inicialização</th><th>PID</th><th>Conta</th><th>Ações</th></tr></thead><tbody>{filteredServices.map(svc=><tr key={svc.id || svc.name}>
+      <td><b>{svc.display_name || svc.name}</b></td><td>{svc.name}</td><td><span className={`mini ${svc.state === 'Running' ? 'ok' : 'neutral'}`}>{svc.state || '-'}</span></td><td>{svc.start_mode || '-'}</td><td>{svc.process_id || '-'}</td><td><small>{svc.start_name || '-'}</small></td><td><button className="small" onClick={()=>serviceAction('start_service', svc)}>Iniciar</button><button className="small" onClick={()=>serviceAction('restart_service', svc)}>Reiniciar</button><button className="small danger" onClick={()=>serviceAction('stop_service', svc)}>Parar</button></td>
+    </tr>)}</tbody></table>
+
+    <h3>Fila e histórico de comandos</h3>
+    <table><thead><tr><th>Data</th><th>Comando</th><th>Alvo</th><th>Status</th><th>Solicitado por</th><th>Resultado</th></tr></thead><tbody>{commands.map(c=><tr key={c.id}><td>{fmtDateTime(c.requested_at)}</td><td>{c.command_label || c.command_type}</td><td>{c.target_name || c.target_id || '-'}</td><td>{c.status}</td><td>{c.requested_by || '-'}</td><td>{c.result_message || '-'}</td></tr>)}</tbody></table>
+  </div>;
+}
+
 function Security({ token }) {
   const [currentPassword, setCurrent] = useState(''); const [newPassword, setNew] = useState(''); const [msg, setMsg] = useState('');
   async function change(e) { e.preventDefault(); setMsg(''); try { await apiClient(token).post('/auth/change-password', { currentPassword, newPassword }); setMsg('Senha alterada com sucesso.'); setCurrent(''); setNew(''); } catch { setMsg('Não foi possível alterar. Confira a senha atual e use no mínimo 8 caracteres.'); } }
@@ -295,7 +391,7 @@ function App() {
   const [token, setToken] = useState(localStorage.getItem('realnet_token') || ''); const [tab, setTab] = useState('live');
   if (!token) return <Login onLogin={setToken} />;
   function logout(){ localStorage.removeItem('realnet_token'); setToken(''); }
-  return <div className="app"><aside><div className="logo"><Cable/><div><b>RealNet</b><span>Monitor</span></div></div><button className={tab==='live'?'active':''} onClick={()=>setTab('live')}>Tempo real</button><button className={tab==='reports'?'active':''} onClick={()=>setTab('reports')}>Relatórios</button><button className={tab==='updates'?'active':''} onClick={()=>setTab('updates')}>Atualizações</button><button className={tab==='security'?'active':''} onClick={()=>setTab('security')}>Segurança</button><button className="logout" onClick={logout}><LogOut size={16}/> Sair</button></aside><main><header><h1>{tab==='live'?'Monitoramento em tempo real':tab==='reports'?'Relatórios de conexão':tab==='updates'?'Atualizações do agente':'Segurança do dashboard'}</h1><p>Horários registrados em segundos, causa provável em português e evidências técnicas do agente.</p></header>{tab==='live' && <Live token={token}/>} {tab==='reports' && <Reports token={token}/>} {tab==='updates' && <Updates token={token}/>} {tab==='security' && <Security token={token}/>}</main></div>;
+  return <div className="app"><aside><div className="logo"><Cable/><div><b>RealNet</b><span>Monitor</span></div></div><button className={tab==='live'?'active':''} onClick={()=>setTab('live')}>Tempo real</button><button className={tab==='reports'?'active':''} onClick={()=>setTab('reports')}>Relatórios</button><button className={tab==='remote'?'active':''} onClick={()=>setTab('remote')}>Administração Windows</button><button className={tab==='updates'?'active':''} onClick={()=>setTab('updates')}>Atualizações</button><button className={tab==='security'?'active':''} onClick={()=>setTab('security')}>Segurança</button><button className="logout" onClick={logout}><LogOut size={16}/> Sair</button></aside><main><header><h1>{tab==='live'?'Monitoramento em tempo real':tab==='reports'?'Relatórios de conexão':tab==='remote'?'Administração remota do Windows':tab==='updates'?'Atualizações do agente':'Segurança do dashboard'}</h1><p>Horários registrados em segundos, causa provável em português, inventário de processos/serviços e ações auditadas.</p></header>{tab==='live' && <Live token={token}/>} {tab==='reports' && <Reports token={token}/>} {tab==='remote' && <RemoteAdmin token={token}/>} {tab==='updates' && <Updates token={token}/>} {tab==='security' && <Security token={token}/>}</main></div>;
 }
 
 createRoot(document.getElementById('root')).render(<App />);

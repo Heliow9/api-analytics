@@ -11,7 +11,7 @@ const { startOfflineWatchdog } = require('./jobs/offlineWatchdog');
 const app = express();
 app.use(helmet({ contentSecurityPolicy: false }));
 app.use(cors({ origin: config.corsOrigin === '*' ? true : config.corsOrigin, credentials: true }));
-app.use(express.json({ limit: '2mb' }));
+app.use(express.json({ limit: '10mb' }));
 app.use(morgan('combined'));
 
 app.get('/health', (req, res) => res.json({ ok: true, service: 'realnet-monitor-api', at: new Date().toISOString() }));
@@ -22,6 +22,7 @@ app.use(`${config.apiBasePath}/devices`, require('./routes/devices'));
 app.use(`${config.apiBasePath}/agents`, require('./routes/agents'));
 app.use(`${config.apiBasePath}/reports`, require('./routes/reports'));
 app.use(`${config.apiBasePath}/updates`, require('./routes/updates').router);
+app.use(`${config.apiBasePath}/remote`, require('./routes/remote'));
 
 app.use((err, req, res, next) => {
   console.error(err);

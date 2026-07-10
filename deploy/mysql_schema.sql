@@ -116,3 +116,65 @@ CREATE TABLE IF NOT EXISTS agent_audit (
   KEY idx_audit_device_time (device_id, created_at),
   KEY idx_audit_type (event_type)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- v6 - inventário de processos/serviços e comandos remotos
+CREATE TABLE IF NOT EXISTS device_processes_current (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  device_id VARCHAR(80) NOT NULL,
+  pid INT NOT NULL,
+  name VARCHAR(180) NULL,
+  path TEXT NULL,
+  window_title TEXT NULL,
+  username VARCHAR(180) NULL,
+  cpu_seconds DECIMAL(18,2) NULL,
+  memory_mb DECIMAL(14,2) NULL,
+  has_window TINYINT(1) NOT NULL DEFAULT 0,
+  collected_at DATETIME NOT NULL,
+  raw_json MEDIUMTEXT NULL,
+  PRIMARY KEY (id),
+  KEY idx_proc_device (device_id),
+  KEY idx_proc_name (name),
+  KEY idx_proc_window (device_id, has_window)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS device_services_current (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  device_id VARCHAR(80) NOT NULL,
+  name VARCHAR(180) NULL,
+  display_name VARCHAR(260) NULL,
+  state VARCHAR(80) NULL,
+  start_mode VARCHAR(80) NULL,
+  process_id INT NULL,
+  path_name TEXT NULL,
+  start_name VARCHAR(180) NULL,
+  collected_at DATETIME NOT NULL,
+  raw_json MEDIUMTEXT NULL,
+  PRIMARY KEY (id),
+  KEY idx_svc_device (device_id),
+  KEY idx_svc_name (name),
+  KEY idx_svc_state (device_id, state)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS device_commands (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  device_id VARCHAR(80) NOT NULL,
+  command_type VARCHAR(80) NOT NULL,
+  command_label VARCHAR(180) NULL,
+  target_type VARCHAR(80) NULL,
+  target_id VARCHAR(120) NULL,
+  target_name VARCHAR(260) NULL,
+  args_json MEDIUMTEXT NULL,
+  status VARCHAR(40) NOT NULL DEFAULT 'pending',
+  requested_by VARCHAR(180) NULL,
+  requested_at DATETIME NOT NULL,
+  picked_at DATETIME NULL,
+  finished_at DATETIME NULL,
+  result_message VARCHAR(800) NULL,
+  raw_result MEDIUMTEXT NULL,
+  created_at DATETIME NOT NULL,
+  updated_at DATETIME NOT NULL,
+  PRIMARY KEY (id),
+  KEY idx_cmd_device_status (device_id, status),
+  KEY idx_cmd_requested (requested_at),
+  KEY idx_cmd_type (command_type)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
