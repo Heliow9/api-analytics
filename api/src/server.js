@@ -6,6 +6,7 @@ const morgan = require('morgan');
 const config = require('./config');
 const { initDb } = require('./initDb');
 const realtime = require('./realtime');
+const { startOfflineWatchdog } = require('./jobs/offlineWatchdog');
 
 const app = express();
 app.use(helmet({ contentSecurityPolicy: false }));
@@ -30,6 +31,7 @@ async function start() {
   await initDb();
   const server = http.createServer(app);
   realtime.attach(server);
+  startOfflineWatchdog({ thresholdSeconds: config.offlineThresholdSeconds, intervalSeconds: config.watchdogIntervalSeconds });
   server.listen(config.port, () => console.log(`[api] Rodando na porta ${config.port}`));
 }
 

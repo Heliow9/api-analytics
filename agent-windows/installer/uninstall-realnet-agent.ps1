@@ -1,7 +1,6 @@
-# RealNet Agent - desinstalador
-# Execute como Administrador.
+$ErrorActionPreference = "SilentlyContinue"
 $TaskName = "RealNet Monitor Agent"
-schtasks /End /TN $TaskName 2>$null | Out-Null
-schtasks /Delete /TN $TaskName /F 2>$null | Out-Null
-Remove-Item -Recurse -Force "$env:ProgramFiles\RealNetAgent" -ErrorAction SilentlyContinue
-Write-Host "RealNet Agent removido. Logs/config em $env:ProgramData\RealNetAgent foram preservados."
+schtasks /End /TN "$TaskName" | Out-Null
+schtasks /Delete /TN "$TaskName" /F | Out-Null
+Remove-Item -Recurse -Force "$env:ProgramFiles\RealNetAgent"
+Write-Host "RealNet Agent removido. Os logs/configuracoes em ProgramData foram preservados."

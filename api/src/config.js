@@ -14,6 +14,8 @@ module.exports = {
   jwtSecret: process.env.JWT_SECRET || 'dev-secret-change-me',
   agentApiKey: process.env.AGENT_API_KEY || 'dev-agent-key-change-me',
   corsOrigin: process.env.CORS_ORIGIN || '*',
+  offlineThresholdSeconds: Number(process.env.OFFLINE_THRESHOLD_SECONDS || 90),
+  watchdogIntervalSeconds: Number(process.env.WATCHDOG_INTERVAL_SECONDS || 30),
   defaultAdmin: {
     name: process.env.DEFAULT_ADMIN_NAME || 'Administrador',
     email: process.env.DEFAULT_ADMIN_EMAIL || 'admin@real.local',

@@ -10,9 +10,9 @@ const path = require('path');
 const os = require('os');
 const axios = require('axios');
 const { ensureIdentity, dataDir } = require('./deviceIdentity');
-const { getAdapterInfo, pingHost, dnsOk, httpOk } = require('./windowsNetwork');
+const { getAdapterInfo, pingHost, dnsOk, httpOk, getSystemInfo } = require('./windowsNetwork');
 
-const VERSION = '1.0.0';
+const VERSION = '1.1.0';
 const API_URL = process.env.AGENT_API_URL || 'https://dashrealapi.duckdns.org/api';
 const AGENT_KEY = process.env.AGENT_API_KEY || '';
 const INTERVAL = Math.max(5, Number(process.env.INTERVAL_SECONDS || 10)) * 1000;
@@ -23,7 +23,11 @@ const LAT_WARN = Number(process.env.LATENCY_WARNING_MS || 300);
 const LOSS_WARN = Number(process.env.PACKET_LOSS_WARNING_PERCENT || 10);
 const queueFile = path.join(dataDir, 'offline-queue.json');
 const logFile = path.join(dataDir, 'agent.log');
+const stateFile = path.join(dataDir, 'state.json');
 const loadedEnv = process.env.REALNET_AGENT_ENV_LOADED || 'nenhum';
+const startedAt = new Date().toISOString();
+let sampleCount = 0;
+let bootAuditSent = false;
 
 function log(msg) {
   const line = `[${new Date().toISOString()}] ${msg}\n`;
@@ -31,32 +35,60 @@ function log(msg) {
   try { fs.appendFileSync(logFile, line); } catch {}
 }
 
-function readQueue() {
-  try { return JSON.parse(fs.readFileSync(queueFile, 'utf8')); } catch { return []; }
+function readJson(file, fallback) {
+  try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return fallback; }
 }
-function writeQueue(items) {
-  try { fs.writeFileSync(queueFile, JSON.stringify(items.slice(-500), null, 2)); } catch {}
+function writeJson(file, data) {
+  try { fs.writeFileSync(file, JSON.stringify(data, null, 2)); } catch {}
 }
+function readQueue() { return readJson(queueFile, []); }
+function writeQueue(items) { writeJson(queueFile, items.slice(-500)); }
 
-function classify({ adapter, gatewayPing, ping, dns, http }) {
-  if (adapter.linkStatus !== 'connected') return { status: 'offline', reason: 'cable_or_wifi_disconnected' };
+function norm(v) { return String(v || '').toLowerCase(); }
+
+function classify({ adapter, gatewayPing, ping, dns, http, apiHealth }) {
+  const status = norm(adapter.adapterStatus);
+  const link = norm(adapter.linkStatus);
+  const admin = norm(adapter.diagnostics?.adminStatus);
+  const media = norm(adapter.diagnostics?.mediaConnectionState);
+  const operational = norm(adapter.diagnostics?.operationalStatus);
+  const hasAdapter = adapter.adapterName || (adapter.allAdapters || []).length;
+
+  if (!hasAdapter || link === 'no_adapter') return { status: 'offline', reason: 'no_adapter_found' };
+  if (admin.includes('disabled') || status.includes('disabled')) return { status: 'offline', reason: 'adapter_disabled' };
+  if (['not present', 'notpresent', 'unknown', 'degraded'].some(x => status.includes(x) || operational.includes(x))) {
+    return { status: 'offline', reason: 'adapter_driver_or_hardware_issue' };
+  }
+  if (status.includes('disconnected') || link.includes('disconnected') || media.includes('disconnected')) {
+    return { status: 'offline', reason: 'cable_or_wifi_disconnected' };
+  }
+  if (link !== 'connected' && link !== 'up') return { status: 'offline', reason: 'network_link_disconnected' };
   if (!adapter.ips || !adapter.ips.length) return { status: 'offline', reason: 'no_valid_ip' };
-  if (adapter.gateway && !gatewayPing.ok) return { status: 'offline', reason: 'gateway_unreachable' };
+  if (!adapter.gateway) return { status: 'offline', reason: 'no_gateway' };
+  if (adapter.gateway && gatewayPing.ok === false) return { status: 'offline', reason: 'gateway_unreachable' };
   if (!dns) return { status: 'offline', reason: 'dns_failure' };
   if (!http) return { status: 'offline', reason: 'no_internet_http_failure' };
-  if ((ping.avgMs || 0) > LAT_WARN) return { status: 'degraded', reason: 'high_latency' };
+  if (apiHealth === false) return { status: 'offline', reason: 'api_unreachable' };
   if ((ping.packetLoss || 0) >= LOSS_WARN) return { status: 'degraded', reason: 'packet_loss' };
+  if ((ping.avgMs || 0) > LAT_WARN) return { status: 'degraded', reason: 'high_latency' };
   return { status: 'online', reason: 'ok' };
 }
 
 async function buildSample() {
-  const adapter = await getAdapterInfo();
+  sampleCount += 1;
+  const includePowerEvents = sampleCount === 1 || sampleCount % 60 === 0;
+  const [adapter, system] = await Promise.all([getAdapterInfo(), getSystemInfo(includePowerEvents)]);
   const gatewayPing = adapter.gateway ? await pingHost(adapter.gateway, 1) : { ok: null, avgMs: null, packetLoss: null };
   const ping = await pingHost(PING_TARGET, 2);
   const dns = await dnsOk(DNS_TEST_HOST);
   const http = await httpOk(HTTP_TEST_URL);
   const apiHealth = await httpOk(API_URL.replace(/\/api\/?$/, '') + '/health');
-  const cls = classify({ adapter, gatewayPing, ping, dns, http });
+  const cls = classify({ adapter, gatewayPing, ping, dns, http, apiHealth });
+  const lastState = readJson(stateFile, {});
+  const currentBoot = system.bootTime || null;
+  const bootChanged = lastState.bootTime && currentBoot && lastState.bootTime !== currentBoot;
+  writeJson(stateFile, { bootTime: currentBoot, lastSampleAt: new Date().toISOString(), agentVersion: VERSION });
+
   return {
     deviceId: ensureIdentity(),
     timestamp: new Date().toISOString(),
@@ -68,9 +100,36 @@ async function buildSample() {
     employeeName: process.env.EMPLOYEE_NAME || '',
     department: process.env.DEPARTMENT || '',
     agentVersion: VERSION,
+    agentStart: !bootAuditSent,
+    bootChanged,
+    system: {
+      bootTime: system.bootTime,
+      uptimeSeconds: system.uptimeSeconds,
+      startedAt,
+      recentPowerEvents: system.recentPowerEvents || []
+    },
+    diagnostics: {
+      adapterName: adapter.adapterName,
+      adapterStatus: adapter.adapterStatus,
+      connectionType: adapter.connectionType,
+      wifiSsid: adapter.wifiSsid,
+      adapter: adapter.diagnostics,
+      tests: {
+        gatewayPing,
+        publicPing: ping,
+        dnsHost: DNS_TEST_HOST,
+        httpTestUrl: HTTP_TEST_URL,
+        pingTarget: PING_TARGET,
+        latencyWarningMs: LAT_WARN,
+        packetLossWarningPercent: LOSS_WARN
+      }
+    },
     network: {
       adapterName: adapter.adapterName,
+      adapterStatus: adapter.adapterStatus,
       linkStatus: adapter.linkStatus,
+      connectionType: adapter.connectionType,
+      wifiSsid: adapter.wifiSsid,
       ips: adapter.ips,
       gateway: adapter.gateway,
       gatewayPingMs: gatewayPing.avgMs,
@@ -88,8 +147,18 @@ async function buildSample() {
 async function sendSample(sample) {
   await axios.post(`${API_URL}/agents/heartbeat`, sample, {
     headers: { 'x-agent-key': AGENT_KEY },
-    timeout: 8000
+    timeout: 9000
   });
+}
+
+async function sendAudit(eventType, message, extra = {}) {
+  try {
+    await axios.post(`${API_URL}/agents/audit`, {
+      deviceId: ensureIdentity(), eventType, message, hostname: os.hostname(), agentVersion: VERSION, at: new Date().toISOString(), ...extra
+    }, { headers: { 'x-agent-key': AGENT_KEY }, timeout: 8000 });
+  } catch (err) {
+    log(`audit não enviado: ${eventType} ${err.message}`);
+  }
 }
 
 async function flushQueue() {
@@ -108,8 +177,10 @@ async function loop() {
     const sample = await buildSample();
     try {
       await sendSample(sample);
-      log(`enviado status=${sample.network.status} reason=${sample.network.reason}`);
+      bootAuditSent = true;
+      log(`enviado status=${sample.network.status} reason=${sample.network.reason} lat=${sample.network.latencyMs ?? '-'}ms loss=${sample.network.packetLoss ?? '-'}% adapter=${sample.network.adapterName || '-'}`);
       await flushQueue();
+      if (sample.bootChanged) await sendAudit('computer_restarted', 'Reinicialização detectada pelo agente.', { system: sample.system });
     } catch (err) {
       const q = readQueue(); q.push(sample); writeQueue(q);
       log(`API indisponível, amostra salva localmente. ${err.message}`);
@@ -119,6 +190,7 @@ async function loop() {
   }
 }
 
-log(`RealNet Agent iniciado. API=${API_URL} Intervalo=${INTERVAL/1000}s Config=${loadedEnv}`);
+log(`RealNet Agent iniciado. API=${API_URL} Intervalo=${INTERVAL/1000}s Config=${loadedEnv} Versão=${VERSION}`);
+sendAudit('agent_started', 'Agente iniciado no Windows.', { startedAt }).finally(() => {});
 loop();
 setInterval(loop, INTERVAL);
